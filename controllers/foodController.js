@@ -2,10 +2,49 @@ const Food = require('../models/foodModel');
 
 exports.getAllFoods = async (req, res) => {
   try {
-    const foods = await Food.find();
+    // a1. Filtering - Remove special fields
+    const queryObj = { ...req.query };
+    const excludedFields = ['sort', 'page', 'limit', 'fields'];
+    excludedFields.forEach((el) => delete queryObj[el]);
+
+    // a2. Advanced Filtering - Convert operators (gte, gt, lte, lt) to MongoDB format
+    let queryStr = JSON.stringify(queryObj);
+    queryStr = queryStr.replace(/\b(gte|gt|lte|lt)\b/g, (match) => `$${match}`);
+    const parsedQuery = JSON.parse(queryStr);
+
+    // Execute query with filters
+    let query = Food.find(parsedQuery);
+
+    // a3. Sorting
+    if (req.query.sort) {
+      const sortBy = req.query.sort.split(',').join(' ');
+      query = query.sort(sortBy);
+    } else {
+      query = query.sort('-createdAt'); // Default sort by newest first
+    }
+
+    // a4. Field Limiting
+    if (req.query.fields) {
+      const fields = req.query.fields.split(',').join(' ');
+      query = query.select(fields);
+    } else {
+      query = query.select('-__v'); // Exclude version field by default
+    }
+
+    // a5. Pagination
+    const page = req.query.page * 1 || 1;
+    const limit = req.query.limit * 1 || 100;
+    const skip = (page - 1) * limit;
+    
+    query = query.skip(skip).limit(limit);
+
+    // Execute the query
+    const foods = await query;
+
     res.status(200).json({
       status: 'success',
       results: foods.length,
+      page,
       data: {
         foods,
       },
